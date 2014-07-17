@@ -1,0 +1,42 @@
+#!/usr/bin/perl
+
+use warnings;
+use strict;
+
+sub escape {
+# Escape any special characters in a string, hoping to prevent issues
+# using it on a command line.
+  my $x = shift;
+  $x =~ s/([^A-Za-z0-9_~+\.\/,-])/\\$1/g;
+  return $x;  
+}
+
+sub scanDir {
+# Look in a directory and all of its subdirectories for Git repos.  Print
+# a one-line summary of each one that we find.
+  my $dir = escape(shift);
+
+  # If there's a Git repo here, check it.
+  if(-d "$dir/.git") {
+    
+  }
+
+
+  # Check each entry in this directory, looking for any subdirectories
+  # into we should recurse.
+  foreach my $child (<$dir/*>) {
+    # Skip anything that's not a directory.
+    next if(!-d $child);
+
+    # Skip the special entries (. and ..).
+    next if($child =~ m#/\.(\.)?#);
+
+    # Everything checks out.  Recurse.
+    scanDir($child);
+  }
+}
+
+
+my $wd = `pwd`;
+chomp $wd;
+scanDir($wd);
