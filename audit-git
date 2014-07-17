@@ -40,6 +40,8 @@ sub checkRepo {
   # How many files are we tracking?
   $stats{'files'} = execute("git ls-files | wc -l");
 
+  # How many commits are in the repo?
+  $stats{'commits'} = execute("git branch --list | cut -b 3- | xargs git rev-list | sort | uniq | wc -l");
 
   return \%stats;
 }
