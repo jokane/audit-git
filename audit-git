@@ -11,19 +11,88 @@ sub escape {
   return $x;  
 }
 
+sub execute {
+# Return the output of a given command, with trailing newlines removed.
+  my $c = shift;
+  my $r = `$c`;
+  chomp $r;
+  return $r;
+}
+
+sub checkRepo {
+# Return a hashref containing some stats about the git repo in the given
+# directory.
+  my $dir = shift;
+  my %stats;
+  chdir $dir;
+
+  # How many objects (both loose and packed) are in this repo?
+  my $counts = execute("git count-objects -v");
+  my ($looseObjects) = ($counts =~ /count: (\d*)/);
+  my ($packedObjects) = ($counts =~ /in-pack: (\d*)/);
+  my $totalObjects = $looseObjects + $packedObjects;
+  $stats{'loose objects'} = $looseObjects;
+  $stats{'objects'} = $totalObjects;
+
+  # How many uncommited changes are here?
+  $stats{'uncommitted changes'} = execute("git status -s | wc -l");
+
+  # How many files are we tracking?
+  $stats{'files'} = execute("git ls-files | wc -l");
+
+
+  return \%stats;
+}
+
+sub summary {
+# Return a human-readable string for the given hashref of stats.
+  my $statsref = shift;
+  my @status;
+  for my $key (keys %$statsref) {
+    push @status, "$$statsref{$key} $key" if($$statsref{$key} > 0);
+  }
+  return join(", ", @status);
+}
+
+sub sumHashes {
+# Given a list of hashrefs whose keys are numbers, return a hashref containing
+# the sums of all of those values.
+  my @hashrefs = @_;
+
+  my %r;
+  foreach my $hashref (@hashrefs) {
+    my %hash = %{$hashref};
+    foreach my $key (keys %hash) {
+      $r{$key} = 0 if(!defined $r{$key});
+      $r{$key} += $hash{$key};
+    }
+  }
+
+  return \%r;
+}
+
 sub scanDir {
 # Look in a directory and all of its subdirectories for Git repos.  Print
 # a one-line summary of each one that we find.
   my $dir = escape(shift);
+  my %stats;
 
   # If there's a Git repo here, check it.
   if(-d "$dir/.git") {
-    
-  }
+    # Get some stats about this repo.
+    %stats = %{checkRepo($dir)};
 
+    # Print a one-line message about it.
+    my @status;
+    for my $key (keys %stats) {
+      push @status, "$stats{$key} $key" if($stats{$key} > 0);
+    }
+    print "$dir: " . summary(\%stats) . "\n";
+  }
 
   # Check each entry in this directory, looking for any subdirectories
   # into we should recurse.
+  my $totalsRef = \%stats;
   foreach my $child (<$dir/*>) {
     # Skip anything that's not a directory.
     next if(!-d $child);
@@ -32,11 +101,19 @@ sub scanDir {
     next if($child =~ m#/\.(\.)?#);
 
     # Everything checks out.  Recurse.
-    scanDir($child);
+    my $childStatsRef = scanDir($child);
+
+    # Keep track of the totals.
+    $totalsRef = sumHashes($totalsRef, $childStatsRef);
   }
+
+  # Return the totals to be summed at the next level up.
+  return $totalsRef;
 }
 
 
 my $wd = `pwd`;
 chomp $wd;
-scanDir($wd);
+my $totalsRef = scanDir($wd);
+print "Totals: " . summary($totalsRef) . "\n";
+
