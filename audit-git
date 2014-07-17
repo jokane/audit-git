@@ -1,5 +1,8 @@
 #!/usr/bin/perl
 
+# This script recursively searches a directory tree, and shows some statistics
+# for any git repositories it finds there.
+
 use warnings;
 use strict;
 
