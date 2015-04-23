@@ -53,7 +53,7 @@ sub summary {
 # Return a human-readable string for the given hashref of stats.
   my $statsref = shift;
   my @status;
-  for my $key (keys %$statsref) {
+  for my $key (sort keys %$statsref) {
     push @status, "$$statsref{$key} $key" if($$statsref{$key} > 0);
   }
   return join(", ", @status);
