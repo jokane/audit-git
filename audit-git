@@ -1,124 +1,65 @@
-#!/usr/bin/perl
+#!/usr/bin/env python3
 
-# This script recursively searches a directory tree, and shows some statistics
-# for any git repositories it finds there.
+import os
+import re
+import contextlib
+from collections import Counter
+import subprocess
 
-use warnings;
-use strict;
+exceptions = list()
 
-sub escape {
-# Escape any special characters in a string, hoping to prevent issues
-# using it on a command line.
-  my $x = shift;
-  $x =~ s/([^A-Za-z0-9_~+\.\/,-])/\\$1/g;
-  return $x;  
-}
+@contextlib.contextmanager
+def temporarily_changed_directory(directory):
+    """A context in which the current directory has been changed to the
+    given one, which should exist already.  When the context ends, change
+    the current directory back."""
+    previous_current_directory = os.getcwd()
+    os.chdir(directory)
+    try:
+        yield
+    finally:
+        os.chdir(previous_current_directory)
 
-sub execute {
-# Return the output of a given command, with trailing newlines removed.
-  my $c = shift;
-  my $r = `$c`;
-  chomp $r;
-  return $r;
-}
+def execute(command):
+    text = subprocess.check_output(command, shell=True)
+    text = text.decode('utf-8')
+    return text
 
-sub checkRepo {
-# Return a hashref containing some stats about the git repo in the given
-# directory.
-  my $dir = shift;
-  my %stats;
-  chdir $dir;
+def check_repo(directory):
+    stats = {}
 
-  # How many objects (both loose and packed) are in this repo?
-  my $counts = execute("git count-objects -v");
-  my ($looseObjects) = ($counts =~ /count: (\d*)/);
-  my ($packedObjects) = ($counts =~ /in-pack: (\d*)/);
-  my $totalObjects = $looseObjects + $packedObjects;
-  $stats{'loose objects'} = $looseObjects;
-  $stats{'objects'} = $totalObjects;
+    try:
+        with temporarily_changed_directory(directory):
+            for line in execute('git count-objects -v').split('\n'):
+                match = re.match('(.*): (.*)', line)
+                if match and match.group(1) == 'count':
+                    stats['loose objects'] = int(match.group(2))
+                if match and match.group(1) == 'in-pack':
+                    stats['packed objects'] = int(match.group(2))
 
-  # How many uncommited changes are here?
-  $stats{'uncommitted changes'} = execute("git status -s | wc -l");
+            stats['uncommitted changes'] = int(execute('git status -s | wc -l'))
+            stats['files'] = int(execute('git ls-files | wc -l'))
+            stats['commits'] = int(execute('git branch --list | cut -b 3- | xargs git rev-list | sort | uniq | wc -l'))
+        return stats
 
-  # How many files are we tracking?
-  $stats{'files'} = execute("git ls-files | wc -l");
+    except subprocess.CalledProcessError as e:
+        print(f'Exception scanning {directory}.')
+        exceptions.append((directory, e))
+        return None
 
-  # How many commits are in the repo?
-  $stats{'commits'} = execute("git branch --list | cut -b 3- | xargs git rev-list | sort | uniq | wc -l");
-
-  return \%stats;
-}
-
-sub summary {
-# Return a human-readable string for the given hashref of stats.
-  my $statsref = shift;
-  my @status;
-  for my $key (sort keys %$statsref) {
-    push @status, "$$statsref{$key} $key" if($$statsref{$key} > 0);
-  }
-  return join(", ", @status);
-}
-
-sub sumHashes {
-# Given a list of hashrefs whose keys are numbers, return a hashref containing
-# the sums of all of those values.
-  my @hashrefs = @_;
-
-  my %r;
-  foreach my $hashref (@hashrefs) {
-    my %hash = %{$hashref};
-    foreach my $key (keys %hash) {
-      $r{$key} = 0 if(!defined $r{$key});
-      $r{$key} += $hash{$key};
-    }
-  }
-
-  return \%r;
-}
-
-sub scanDir {
-# Look in a directory and all of its subdirectories for Git repos.  Print
-# a one-line summary of each one that we find.
-  my $dir = escape(shift);
-  my %stats;
-
-  # If there's a Git repo here, check it.
-  if(-d "$dir/.git") {
-    # Get some stats about this repo.
-    %stats = %{checkRepo($dir)};
-
-    # Print a one-line message about it.
-    my @status;
-    for my $key (keys %stats) {
-      push @status, "$stats{$key} $key" if($stats{$key} > 0);
-    }
-    print "$dir: " . summary(\%stats) . "\n";
-  }
-
-  # Check each entry in this directory, looking for any subdirectories
-  # into we should recurse.
-  my $totalsRef = \%stats;
-  foreach my $child (<$dir/*>) {
-    # Skip anything that's not a directory.
-    next if(!-d $child);
-
-    # Skip the special entries (. and ..).
-    next if($child =~ m#/\.(\.)?#);
-
-    # Everything checks out.  Recurse.
-    my $childStatsRef = scanDir($child);
-
-    # Keep track of the totals.
-    $totalsRef = sumHashes($totalsRef, $childStatsRef);
-  }
-
-  # Return the totals to be summed at the next level up.
-  return $totalsRef;
-}
+def format_stats(stats):
+    return ', '.join([f'{k}:{v}' for k, v in filter(lambda kv: kv[1]>0, stats.items())])
 
 
-my $wd = `pwd`;
-chomp $wd;
-my $totalsRef = scanDir($wd);
-print "Totals: " . summary($totalsRef) . "\n";
+totals = Counter()
+for root, dirs, files in os.walk('.'):
+    if '.git' not in dirs: continue
+    stats = check_repo(root)
+    totals += Counter(stats)
+    print(f'{root}:', format_stats(stats))
+print(f'TOTALS:', format_stats(totals))
+    
+
+for (directory, e) in exceptions:
+    print(f'Exception in {directory}.')
 
