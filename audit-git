@@ -40,7 +40,7 @@ def check_repo(directory):
             stats['uncommitted changes'] = int(execute('git status -s | wc -l'))
             stats['files'] = int(execute('git ls-files | wc -l'))
             stats['branches'] = int(execute('git branch --list | grep -v "no branch" | wc -l'))
-            stats['commits'] = int(execute('git rev-list $(git branch --list | grep -v "no branch" | cut -b 3-) -- | sort | uniq | wc -l'))
+            stats['commits'] = int(execute('git rev-list $(git branch --list | grep -v "no branch" | cut -b 3-) HEAD -- | sort | uniq | wc -l'))
         return stats
 
     except subprocess.CalledProcessError as e:
