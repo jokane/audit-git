@@ -5,6 +5,7 @@ import re
 import contextlib
 from collections import Counter
 import subprocess
+import sys
 
 exceptions = list()
 
@@ -44,9 +45,9 @@ def check_repo(directory):
         return stats
 
     except subprocess.CalledProcessError as e:
-        print(f'Exception scanning {directory}.')
+        print(f'Exception scanning {directory}.', file=sys.stderr)
         exceptions.append((directory, e))
-        return None
+        return {}
 
 def format_stats(stats):
     return ', '.join([f'{k}:{v}' for k, v in filter(lambda kv: kv[1]>0, stats.items())])
